@@ -2,6 +2,7 @@ import asyncio
 import logging
 import sys
 import threading
+from datetime import datetime
 
 from pyrogram.client import Client
 from pyrogram.errors import ChannelInvalid, ChatAdminRequired
@@ -27,14 +28,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 try:
-    import uvloop  # type: ignore[reportMissingImports]
-
+    import uvloop
     uvloop.install()
     logger.info("Using UVLoop for enhanced performance")
 except ImportError:
     logger.warning("UVLoop not installed. Falling back to asyncio")
 
 background_tasks = set()
+
+
+async def notify_startup(client: Client):
+    text = (
+        "✅ Bot is online and ready!\n\n"
+        f"🕒 Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+    )
+
+    for admin_id in config.ROOT_ADMINS_ID:
+        try:
+            await client.send_message(admin_id, text)
+        except Exception:
+            pass
 
 
 async def main() -> None:
@@ -48,10 +61,11 @@ async def main() -> None:
         max_message_cache_size=config.BOT_MAX_MESSAGE_CACHE_SIZE,
     )
 
-    # Load database settings
     await options.load_settings()
     await bot_client.start()
-    # Bot setup
+
+    # ✅ startup notification
+    await notify_startup(bot_client)
 
     try:
         channels_n_invite = await PyroHelper.get_channel_invites(
@@ -60,7 +74,9 @@ async def main() -> None:
         )
         config.channels_n_invite = channels_n_invite
     except (ChannelInvalid, ChatAdminRequired, NoInviteLinkError) as e:
-        sys.exit(f"Please add and give me permission in FORCE_SUB_CHANNELS and BACKUP_CHANNEL:\n{e}")
+        sys.exit(
+            f"Please add and give me permission in FORCE_SUB_CHANNELS and BACKUP_CHANNEL:\n{e}"
+        )
 
     await schedule_manager.start()
 
@@ -69,9 +85,9 @@ async def main() -> None:
         http_server = HTTPServer(host=config.HOSTNAME, port=config.PORT)
         task = asyncio.create_task(http_server.run_server())
         background_tasks.add(task)
+
     if config.RATE_LIMITER:
-        thread = threading.Thread(target=RateLimiter.cooldown_limiter)
-        thread.daemon = True
+        thread = threading.Thread(target=RateLimiter.cooldown_limiter, daemon=True)
         thread.start()
 
     await idle()
